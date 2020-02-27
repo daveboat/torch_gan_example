@@ -21,27 +21,39 @@ def train_one_epoch(epoch, dataloader, generator, discriminator, generator_optim
         # create gaussian noise vector as input to the generator
         noise = torch.randn((batch_len, noise_dim)).to(device)
 
-        # train discriminator by running the random noise through the generator for the fake images, and taking a batch
-        # of real images from the dataloader. The discriminator classifies both of them, then the loss is minimized by
-        # classifying both correctly
+        # first, train discriminator by running the random noise through the generator for the fake images, and taking a
+        # batch of real images from the dataloader. The discriminator classifies both of them, then the loss is
+        # minimized by classifying both correctly
+
+        # zero discriminator gradients
         discriminator_optimizer.zero_grad()
+
+        # generate a batch of fake images using the generator, then classify both real and fake images with the
+        # discriminator
         generated_images = generator(noise)
         real_output = discriminator(images)
         fake_output = discriminator(generated_images)
 
+        # the discriminator loss is calculated, backpropagated. Note that we have to use retain_graph=True, otherwise
+        # torch will automatically clean up the computational graph so that we can't run backward on the generator graph
+        # in the next step without first running another forward pass on the discriminator graph again
         disc_loss = discriminator_loss(real_output, fake_output)
-        disc_loss.backward()
-        discriminator_optimizer.step()
+        disc_loss.backward(retain_graph=True)
 
-        # train generator by running the random noise through the generator and the discriminator. Have to do this again
-        # because torch clears graphs for memory reasons (?) after backward() is finished, so can't backpropogate again
-        # without retain_graph=True, unless another forward pass needs to be done, which is what we do here
+        # next, train generator by running the random noise through the generator and the discriminator, then
+        # backpropagating gradients from a loss which maximizes the number of generated images which the discriminator
+        # classifies as real
+
+        # we have to zero the generator's gradients because we already accumulated gradients from the previous step
+        # which, from the generator's point of view, is the opposite of what it wants to do
         generator_optimizer.zero_grad()
-        generated_images = generator(noise)
-        fake_output = discriminator(generated_images)
 
+        # now we compute the loss using the discriminator's output, and backpropagate for gradients
         gen_loss = generator_loss(fake_output)
         gen_loss.backward()
+
+        # apply gradients for both models.
+        discriminator_optimizer.step()
         generator_optimizer.step()
 
         # print some info for this batch
